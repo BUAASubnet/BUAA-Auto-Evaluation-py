@@ -55,7 +55,8 @@ def main():
         url = f"https://spoc.buaa.edu.cn/pjxt/personnelEvaluation/listObtainPersonnelEvaluationTasks?yhdm={username}&rwmc=&sfyp=0&pageNum=1&pageSize=10"
         tasks = api.get(url).json()
         rwid = tasks["result"]["list"][0].get("rwid")
-        print(f"任务ID: {rwid}")
+        rwmc = tasks["result"]["list"][0].get("rwmc", "未知任务")
+        print(f"任务: {rwmc}")
     except Exception:
         print("❌ 评教任务获取失败")
         return
@@ -63,11 +64,16 @@ def main():
     # 获取问卷列表
     try:
         url = f"https://spoc.buaa.edu.cn/pjxt/evaluationMethodSix/getQuestionnaireListToTask?rwid={rwid}&sfyp=0&pageNum=1&pageSize=999"
-        wj_list = api.get(url).json().get("result", [])
-        wjid_list = [item["wjid"] for item in wj_list]
-        print("问卷ID列表:", wjid_list)
-    except Exception:
-        print("❌ 问卷列表获取失败")
+        response = api.get(url)
+        print(f"📥 获取问卷列表返回状态码: {response.status_code}")
+        wj_list = response.json().get("result", [])
+        print("问卷列表:")
+        for item in wj_list:
+            wjmc = item.get("wjmc", "未知问卷")
+            rwmc = item.get("rwmc", "未知任务")
+            print(f"  - 问卷: {wjmc}, 任务: {rwmc}")
+    except Exception as e:
+        print(f"❌ 问卷列表获取失败: {e}")
         return
 
     # 获取所有课程
@@ -75,24 +81,35 @@ def main():
     for wj in wj_list:
         try:
             wjid = wj["wjid"]
+            wjmc = wj.get("wjmc", "未知问卷")
+            rwmc = wj.get("rwmc", "未知任务")
             msid = wj.get("msid", "1")
             api.post("https://spoc.buaa.edu.cn/pjxt/evaluationMethodSix/reviseQuestionnairePattern", json={
                 "rwid": rwid, "wjid": wjid, "msid": msid
             })
             url = f"https://spoc.buaa.edu.cn/pjxt/evaluationMethodSix/getRequiredReviewsData?sfyp=0&wjid={wjid}&xnxq={xnxq}&pageNum=1&pageSize=999"
-            courses = api.get(url).json().get("result", [])
+            response = api.get(url)
+            print(f"📥 获取课程返回状态码: {response.status_code}")
+            courses = response.json().get("result", [])
+            for course in courses:
+                kcmc = course.get("kcmc", "未知课程")
+                bpmc = course.get("bpmc", "未知教师")  # 修正为从 bpmc 提取教师名称
+                print(f"  - 课程: {kcmc}, 教师: {bpmc}")
             all_courses.extend(courses)
-            print(f"问卷{wjid}课程数: {len(courses)}")
-        except Exception:
-            print(f"❌ 问卷{wjid}课程获取失败")
+            print(f"问卷 {wjmc} - {rwmc} 课程数: {len(courses)}")
+        except Exception as e:
+            print(f"❌ 问卷 {wjmc} - {rwmc} 课程获取失败: {e}")
 
     print(f"总课程数: {len(all_courses)}")
 
     # 评教并提交
     for course in all_courses:
+        kcmc = course.get("kcmc", "未知课程")
+        bpmc = course.get("bpmc", "未知教师")  # 修正为从 bpmc 提取教师名称
         wjid = course.get("wjid")
+        print(f"📋 当前课程: 课程：{kcmc}, 教师：{bpmc}")  # 添加日志输出
         if not wjid:
-            print(f"❌ 课程{course.get('kcmc', '未知')}无问卷ID")
+            print(f"❌ 课程 {kcmc} - {bpmc} 无问卷ID")
             continue
         payload = {
             "id": "",
@@ -119,13 +136,14 @@ def main():
         }
         url = "https://spoc.buaa.edu.cn/pjxt/evaluationMethodSix/getQuestionnaireTopic?" + urlencode(payload)
         try:
-            q_data = api.get(url).json()
+            response = api.get(url)
+            q_data = response.json()
             if q_data.get("code") != "200":
-                print(f"❌ 问卷{wjid}获取失败")
+                print(f"❌ 问卷 {kcmc} - {bpmc} 获取失败")
                 continue
             result = q_data.get("result", [])
             if not result:
-                print(f"❌ 问卷{wjid}无题目")
+                print(f"❌ 问卷 {kcmc} - {bpmc} 无题目")
                 continue
             wj_entity = result[0].get("pjxtWjWjbReturnEntity", {})
             wjzblist = wj_entity.get("wjzblist", [])
@@ -181,7 +199,7 @@ def main():
                     "sfnm": "1"
                 })
             if not pjjglist:
-                print(f"❌ 问卷{wjid}无评教对象")
+                print(f"❌ 问卷 {kcmc} - {bpmc} 无评教对象")
                 continue
             submit_payload = {
                 "pjidlist": [],
@@ -191,11 +209,12 @@ def main():
             resp = api.post("https://spoc.buaa.edu.cn/pjxt/evaluationMethodSix/submitSaveEvaluation", json=submit_payload)
             result = resp.json()
             if result.get("code") == "200":
-                print(f"✅ 问卷{wjid}提交成功")
+                print(f"✅ 问卷 {kcmc} - {bpmc} 提交成功")
             else:
-                print(f"❌ 问卷{wjid}提交失败")
-        except Exception:
-            print(f"❌ 问卷{wjid}处理异常")
+                print(f"❌ 问卷 {kcmc} - {bpmc} 提交失败，可能已评教")
+        except Exception as e:
+            print(f"❌ 问卷 {kcmc} - {bpmc} 处理异常: {e}")
 
 if __name__ == '__main__':
     main()
+    input("\n程序已结束，按回车键退出...")
