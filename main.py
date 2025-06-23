@@ -1,5 +1,6 @@
 from sso import API, LoginError
 from urllib.parse import urlencode
+import random
 
 def main():
     print("="*60)
@@ -105,9 +106,9 @@ def main():
     # 评教并提交
     for course in all_courses:
         kcmc = course.get("kcmc", "未知课程")
-        bpmc = course.get("bpmc", "未知教师")  # 修正为从 bpmc 提取教师名称
+        bpmc = course.get("bpmc", "未知教师")
         wjid = course.get("wjid")
-        print(f"📋 当前课程: 课程：{kcmc}, 教师：{bpmc}")  # 添加日志输出
+        print(f"📋 当前课程: 课程：{kcmc}, 教师：{bpmc}")
         if not wjid:
             print(f"❌ 课程 {kcmc} - {bpmc} 无问卷ID")
             continue
@@ -148,19 +149,19 @@ def main():
             wj_entity = result[0].get("pjxtWjWjbReturnEntity", {})
             wjzblist = wj_entity.get("wjzblist", [])
             all_questions = [q for zb in wjzblist for q in zb.get("tklist", [])]
+            random_index = random.randint(0, len(all_questions) - 1) if all_questions else -1
             pjjglist = []
             for pjjg in result[0].get("pjxtPjjgPjjgckb", []):
                 pjxxlist = []
-                for q in all_questions:
+                for i, q in enumerate(all_questions):
                     tmlx = q.get("tmlx", "1")
                     tmxxlist = q.get("tmxxlist", [])
-                    if tmlx == "1":
-                        xxid = tmxxlist[1]["tmxxid"] if len(tmxxlist) > 1 else (tmxxlist[0]["tmxxid"] if tmxxlist else "")
-                        xxdalist = [xxid] if xxid else []
-                    elif tmlx == "6":
-                        xxdalist = []
+                    if not tmxxlist:
+                        continue
+                    if i == random_index and len(tmxxlist) > 1:
+                        xxdalist = [tmxxlist[1]["tmxxid"]]
                     else:
-                        xxdalist = []
+                        xxdalist = [tmxxlist[0]["tmxxid"]]
                     pjxxlist.append({
                         "sjly": "1",
                         "stlx": tmlx,
